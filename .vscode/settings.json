@@ -15,5 +15,9 @@
   "search.exclude": {
     "**/__pycache__": true,
     "**/.venv": true
-  }
+  },
+  "cursorpyright.analysis.extraPaths": [
+    "${workspaceFolder}/skills/shared"
+  ],
+  "cursorpyright.analysis.typeCheckingMode": "basic"
 }

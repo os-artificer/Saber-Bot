@@ -26,11 +26,10 @@ OPENCLAW_JSON="${OPENCLAW_HOME}/openclaw.json"
 
 # 与 skills/ 下目录一致（不含 shared，shared 为脚本依赖库）
 SKILL_NAMES=(
-  china-news
   dev-news
+  global-news
   infoq-ai-news
   sec-news
-  world-news
   weather
 )
 
