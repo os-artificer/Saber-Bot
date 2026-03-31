@@ -2,6 +2,7 @@
 """
 Unified global news fetcher (self-contained).
 Usage: python3 fetch_global_news.py [days_ago] [category] [--max-sources N]
+       默认 days_ago=3（约过去 72 小时内，滚动窗口）。
 """
 
 from __future__ import annotations
@@ -19,8 +20,15 @@ from typing import Any, Dict, List, Optional, Tuple
 
 _SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.normpath(os.path.join(_SCRIPT_DIR, "..", "..", "shared")))
-from news_fetch_filters import apply_source_cap, item_in_date_window, parse_argv_max_sources, resolve_max_sources
-from news_format import format_source_block
+from news_fetch_filters import (
+    DEFAULT_NEWS_LOOKBACK_DAYS,
+    apply_source_cap,
+    item_in_date_window,
+    parse_argv_max_sources,
+    resolve_max_sources,
+)
+from news_format import collect_urls_from_results, format_source_block, format_url_appendix_block
+from rss_links import extract_item_link
 
 SUPPORTED_CATEGORIES = {
     "all",
@@ -54,6 +62,10 @@ SOURCES: Dict[str, Dict[str, Any]] = {
     "xinhua_politics": {"name": "新华网·时政", "kind": "rss", "url": "http://www.xinhuanet.com/politics/news_politics.xml", "icon": "🏛️", "bucket": "china", "tags": ["all", "domestic", "politics", "geopolitics"]},
     "xinhua_fortune": {"name": "新华网·财经", "kind": "rss", "url": "http://www.xinhuanet.com/fortune/news_fortune.xml", "icon": "💹", "bucket": "china", "tags": ["all", "economy", "domestic"]},
     "cns_scroll": {"name": "中新网·滚动", "kind": "rss", "url": "https://www.chinanews.com.cn/rss/scroll-news.xml", "icon": "📰", "bucket": "china", "tags": ["all", "domestic", "world", "economy", "geopolitics", "war", "politics"]},
+    "huanqiu_cn": {"name": "环球时报（中文）", "kind": "rss", "url": "https://m.huanqiu.com/rss", "icon": "🌏", "bucket": "china", "tags": ["all", "domestic", "world", "politics", "geopolitics"]},
+    "huanqiu_gt": {"name": "环球时报 Global Times", "kind": "rss", "url": "https://www.globaltimes.cn/rss/outbrain.xml", "icon": "🗞️", "bucket": "china", "tags": ["all", "world", "china", "geopolitics", "war", "politics"]},
+    "people_politics": {"name": "人民网·政治", "kind": "rss", "url": "http://www.people.com.cn/rss/politics.xml", "icon": "🏛️", "bucket": "china", "tags": ["all", "domestic", "politics", "geopolitics"]},
+    "ftchinese": {"name": "FT中文网", "kind": "rss", "url": "https://www.ftchinese.com/rss/feed", "icon": "💼", "bucket": "china", "tags": ["all", "world", "economy", "domestic"]},
     "bbc_cn": {"name": "BBC中文网", "kind": "rss", "url": "https://feeds.bbci.co.uk/zhongwen/simp/rss.xml", "icon": "🇬🇧", "bucket": "china", "tags": ["all", "world", "economy", "geopolitics", "war", "politics"]},
     "scmp_cn": {"name": "南华早报", "kind": "rss", "url": "https://www.scmp.com/rss/world.xml", "icon": "🇭🇰", "bucket": "china", "tags": ["all", "world", "economy", "geopolitics", "war"]},
     "sina_domestic": {"name": "新浪国内", "kind": "sina", "api_url": "https://feed.mix.sina.com.cn/api/roll/get", "params": {"pageid": "153", "lid": "2516", "num": "20", "page": "1"}, "icon": "🇨🇳", "bucket": "china", "tags": ["all", "domestic", "politics", "economy", "geopolitics"]},
@@ -61,7 +73,6 @@ SOURCES: Dict[str, Dict[str, Any]] = {
     "sina_economy": {"name": "新浪财经", "kind": "sina", "api_url": "https://feed.mix.sina.com.cn/api/roll/get", "params": {"pageid": "153", "lid": "1686", "num": "20", "page": "1"}, "icon": "💹", "bucket": "china", "tags": ["all", "economy", "domestic"]},
     "sina_mil": {"name": "新浪军事", "kind": "sina", "api_url": "https://feed.mix.sina.com.cn/api/roll/get", "params": {"pageid": "153", "lid": "2425", "num": "20", "page": "1"}, "icon": "⚔️", "bucket": "china", "tags": ["all", "war", "geopolitics", "domestic"]},
     "sina_tech": {"name": "新浪科技", "kind": "sina", "api_url": "https://feed.mix.sina.com.cn/api/roll/get", "params": {"pageid": "153", "lid": "1195", "num": "20", "page": "1"}, "icon": "📱", "bucket": "china", "tags": ["all", "tech", "economy"]},
-    "freebuf": {"name": "FreeBuf", "kind": "rss", "url": "https://www.freebuf.com/feed", "icon": "🔐", "bucket": "china", "tags": ["all", "tech", "security"]},
     "bbc_world": {"name": "BBC News", "kind": "rss", "url": "https://feeds.bbci.co.uk/news/world/rss.xml", "icon": "🇬🇧", "bucket": "world", "tags": ["all", "world", "china"]},
     "nytimes_world": {"name": "NY Times World", "kind": "rss", "url": "https://rss.nytimes.com/services/xml/rss/nyt/World.xml", "icon": "🇺🇸", "bucket": "world", "tags": ["all", "world", "china"]},
     "reuters_world": {"name": "Reuters", "kind": "rss", "url": "https://feeds.reuters.com/reuters/worldnews", "icon": "📰", "bucket": "world", "tags": ["all", "world"]},
@@ -77,6 +88,10 @@ FETCH_ORDER = [
     "xinhua_fortune",
     "xinhua_world",
     "cns_scroll",
+    "huanqiu_cn",
+    "huanqiu_gt",
+    "people_politics",
+    "ftchinese",
     "sina_domestic",
     "sina_world",
     "sina_economy",
@@ -84,7 +99,6 @@ FETCH_ORDER = [
     "sina_tech",
     "bbc_cn",
     "scmp_cn",
-    "freebuf",
     "bbc_world",
     "nytimes_world",
     "reuters_world",
@@ -97,7 +111,7 @@ FETCH_ORDER = [
 
 
 def parse_args(argv: List[str]) -> Tuple[int, str, Optional[int]]:
-    days = 0
+    days = DEFAULT_NEWS_LOOKBACK_DAYS
     category = "all"
     args, cli_cap = parse_argv_max_sources(argv)
     cap = resolve_max_sources(cli_cap)
@@ -148,9 +162,15 @@ def fetch_rss(config: Dict[str, Any], days: int) -> Dict[str, Any]:
             title = (item.findtext("title") or "").strip()
             if not title:
                 continue
-            link = (item.findtext("link") or item.findtext("guid") or "").strip()
-            desc = (item.findtext("description") or item.findtext("summary") or item.findtext("content") or item.findtext("content:encoded") or "").strip()
-            desc = re.sub(r"<[^>]+>", "", html.unescape(desc))[:200]
+            desc_raw = (
+                item.findtext("description")
+                or item.findtext("summary")
+                or item.findtext("content")
+                or item.findtext("content:encoded")
+                or ""
+            ).strip()
+            link = extract_item_link(item, desc_raw)
+            desc = re.sub(r"<[^>]+>", "", html.unescape(desc_raw))[:1200]
             pub_date = _parse_pub_date(item.findtext("pubDate") or item.findtext("published") or item.findtext("updated") or item.findtext("dc:date") or "")
             if not item_in_date_window(pub_date, days):
                 continue
@@ -209,7 +229,16 @@ def format_section(title: str, rows: List[Tuple[str, Dict[str, Any]]]) -> str:
             blocks.append("")
             continue
         items = result["results"]
-        blocks.extend(format_source_block(result["icon"], f"{result['name']}（{len(items)} 条）", items, max_items=6, desc_max=160))
+        blocks.extend(
+            format_source_block(
+                result["icon"],
+                f"{result['name']}（{len(items)} 条）",
+                items,
+                max_items=8,
+                desc_max=480,
+                im_clickable=True,
+            )
+        )
         blocks.append("")
     return "\n".join(blocks).rstrip()
 
@@ -248,6 +277,17 @@ def main() -> None:
         out = "📭 暂无相关资讯"
     if cap is not None:
         out = f"（本 run 抓取 {len(selected)} 个源，上限 {cap}）\n\n" + out
+
+    # 文末纯文本 URL 汇总：即使上游只摘标题，也便于用户搜索 https:// 或整段转发
+    appendix_on = (os.environ.get("OPENCLAW_GLOBAL_NEWS_URL_APPENDIX") or "1").strip().lower() not in ("0", "false", "no", "off")
+    if appendix_on and out != "📭 暂无相关资讯":
+        max_u = 300
+        raw_max = (os.environ.get("OPENCLAW_GLOBAL_NEWS_URL_APPENDIX_MAX") or "").strip()
+        if raw_max.isdigit():
+            max_u = max(1, min(2000, int(raw_max)))
+        urls = collect_urls_from_results(results, selected, max_urls=max_u)
+        out += format_url_appendix_block(urls)
+
     print(out)
 
 

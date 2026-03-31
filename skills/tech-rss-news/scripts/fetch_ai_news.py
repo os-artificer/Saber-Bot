@@ -2,7 +2,7 @@
 """
 Fetch AI/Tech news from multiple authoritative IT news sources.
 Usage: python3 fetch_ai_news.py [days_ago] [site_filter]
-    days_ago: number of days to look back (default: 0 = today only)
+    days_ago: number of days to look back (default: 3 ≈ past 72 hours rolling)
     site_filter: comma-separated list of site codes (e.g., "en,cn,verge")
                  or "all" for everything (default: "en,cn")
     
@@ -31,12 +31,14 @@ import re
 _SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.normpath(os.path.join(_SCRIPT_DIR, "..", "..", "shared")))
 from news_fetch_filters import (
+    DEFAULT_NEWS_LOOKBACK_DAYS,
     apply_source_cap,
     item_in_date_window,
     parse_argv_max_sources,
     resolve_max_sources,
 )
-from news_format import format_source_block
+from news_format import collect_urls_from_results, format_source_block, format_url_appendix_block
+from rss_links import extract_item_link
 
 # Supported sources with RSS feeds
 SOURCES = {
@@ -193,11 +195,29 @@ SOURCES = {
             "generative", "neural", "deep learning", "nlp", "automation"
         ]
     },
+    "huggingface": {
+        "name": "Hugging Face Blog",
+        "url": "https://huggingface.co/blog/feed.xml",
+        "lang": "en",
+        "icon": "🤗",
+        "accept_all": True,
+        "ai_keywords": [],
+    },
+    "qbitai": {
+        "name": "量子位",
+        "url": "https://www.qbitai.com/feed",
+        "lang": "cn",
+        "icon": "⚛️",
+        "accept_all": True,
+        "ai_keywords": [],
+    },
 }
 
 AI_NEWS_SOURCE_ORDER = [
     "en",
     "cn",
+    "qbitai",
+    "huggingface",
     "mit_tr",
     "theregister",
     "nvidia_blog",
@@ -220,8 +240,10 @@ def is_ai_related(title, description, keywords):
 def _atom_ns(tag: str) -> str:
     return f"{{http://www.w3.org/2005/Atom}}{tag}"
 
-def fetch_source(source_id, config, days_ago=0):
+def fetch_source(source_id, config, days_ago=None):
     """Fetch and filter news from a single source."""
+    if days_ago is None:
+        days_ago = DEFAULT_NEWS_LOOKBACK_DAYS
     try:
         req = urllib.request.Request(config["url"], headers={'User-Agent': 'Mozilla/5.0'})
         with urllib.request.urlopen(req, timeout=20) as response:
@@ -237,13 +259,11 @@ def fetch_source(source_id, config, days_ago=0):
                 (item.findtext('title') or '').strip()
                 or (item.findtext(_atom_ns('title')) or '').strip()
             )
-            link = (item.findtext('link') or '').strip()
-            if not link:
-                for ln in item.findall(_atom_ns('link')):
-                    href = (ln.get('href') or '').strip()
-                    if href:
-                        link = href
-                        break
+            desc_raw = (
+                (item.findtext('description') or item.findtext('summary') or item.findtext('content') or '').strip()
+                or (item.findtext(_atom_ns('summary')) or '').strip()
+            )
+            link = extract_item_link(item, desc_raw)
             
             # Try different date field names
             pub_date_str = (
@@ -255,14 +275,11 @@ def fetch_source(source_id, config, days_ago=0):
                 ''
             ).strip()
             
-            description = (
-                (item.findtext('description') or item.findtext('summary') or item.findtext('content') or '').strip()
-                or (item.findtext(_atom_ns('summary')) or '').strip()
-            )
+            description = desc_raw
             # Clean HTML from description
             description = html.unescape(description) if description else ''
             description = re.sub(r"<[^>]+>", "", description)
-            description = description[:500] + "..." if len(description) > 500 else description
+            description = description[:2000] + "..." if len(description) > 2000 else description
             
             # Parse date
             pub_date = None
@@ -282,8 +299,8 @@ def fetch_source(source_id, config, days_ago=0):
             if not item_in_date_window(pub_date, days_ago):
                 continue
             
-            # Filter by AI keywords
-            if is_ai_related(title, description, config["ai_keywords"]):
+            # Filter by AI keywords（专用 AI 垂直源可 accept_all）
+            if config.get("accept_all") or is_ai_related(title, description, config["ai_keywords"]):
                 results.append({
                     'title': html.unescape(title) if isinstance(title, str) else title,
                     'link': link,
@@ -327,7 +344,12 @@ def format_output(source_results, filter_sites=None):
         total += len(items)
         output.extend(
             format_source_block(
-                icon, f"{name}（{len(items)} 条）", items, max_items=10, desc_max=160
+                icon,
+                f"{name}（{len(items)} 条）",
+                items,
+                max_items=10,
+                desc_max=480,
+                im_clickable=True,
             )
         )
         output.append("")
@@ -341,7 +363,7 @@ def format_output(source_results, filter_sites=None):
 if __name__ == "__main__":
     argv, cli_cap = parse_argv_max_sources(sys.argv[1:])
     max_cap = resolve_max_sources(cli_cap)
-    days = 0
+    days = DEFAULT_NEWS_LOOKBACK_DAYS
     filter_sites = {"en", "cn"}  # Default: InfoQ only
     
     if len(argv) > 0:
@@ -365,4 +387,19 @@ if __name__ == "__main__":
     out = format_output(results, filter_sites)
     if max_cap is not None:
         out = f"（本 run 抓取 {len(order_keys)} 个源，上限 {max_cap}）\n\n" + out
+
+    appendix_on = (os.environ.get("OPENCLAW_TECH_RSS_URL_APPENDIX") or "1").strip().lower() not in (
+        "0",
+        "false",
+        "no",
+        "off",
+    )
+    if appendix_on and "今日无AI相关新资讯" not in out:
+        max_u = 300
+        raw_max = (os.environ.get("OPENCLAW_TECH_RSS_URL_APPENDIX_MAX") or "").strip()
+        if raw_max.isdigit():
+            max_u = max(1, min(2000, int(raw_max)))
+        urls = collect_urls_from_results(results, order_keys, max_urls=max_u)
+        out += format_url_appendix_block(urls)
+
     print(out)

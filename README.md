@@ -21,7 +21,7 @@ cd /path/to/Saber-Bot
 
 1. 将本仓库 `skills/` **复制**到 `~/.openclaw/skills/`（与现有文件合并，不删除你在该目录下的其它 skill）。
 2. 若存在 `~/.openclaw/openclaw.json`，则为下列 skill 写入 `skills.entries.<name>.enabled: true`（并备份为 `openclaw.json.bak`）：
-   - `global-news`, `dev-news`, `infoq-ai-news`, `sec-news`, `weather`
+   - `global-news`, `tech-rss-news`, `weather`
 
 ### 选项
 
@@ -58,10 +58,8 @@ openclaw gateway restart
 
 ```
 skills/
-  dev-news/        …
   global-news/     …
-  infoq-ai-news/   …
-  sec-news/        …
+  tech-rss-news/   …  # InfoQ AI + 开发 + 安全 RSS（三脚本合一）
   weather/         …
   shared/          # 新闻脚本共用模块（news_format / news_fetch_filters）
 scripts/

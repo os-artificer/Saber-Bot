@@ -11,6 +11,9 @@ import re
 from datetime import datetime, timedelta
 from typing import List, Optional, Sequence
 
+# 各新闻脚本默认回溯窗口：days_ago=3 表示 pub_date >= now - 72h（滚动约三天）
+DEFAULT_NEWS_LOOKBACK_DAYS = 3
+
 
 def normalize_naive_local(dt: datetime) -> datetime:
     """Strip tzinfo after converting to local, for naive comparisons."""

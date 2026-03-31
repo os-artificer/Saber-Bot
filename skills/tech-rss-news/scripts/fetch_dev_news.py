@@ -2,7 +2,7 @@
 """
 Fetch programming language news, version logs, and open source product info.
 Usage: python3 fetch_dev_news.py [days_ago] [category]
-    days_ago: number of days to look back (default: 7)
+    days_ago: number of days to look back (default: 3 ≈ past 72 hours rolling)
     category: all, languages, oss, devtools (default: all)
 """
 
@@ -19,10 +19,18 @@ import json
 _SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.normpath(os.path.join(_SCRIPT_DIR, "..", "..", "shared")))
 from news_fetch_filters import (
+    DEFAULT_NEWS_LOOKBACK_DAYS,
     apply_source_cap,
     item_in_date_window,
     parse_argv_max_sources,
     resolve_max_sources,
+)
+from rss_links import extract_item_link
+from news_format import (
+    RULE,
+    collect_urls_from_results,
+    format_news_item_lines,
+    format_url_appendix_block,
 )
 
 # Programming Language Sources
@@ -107,6 +115,30 @@ OSS_SOURCES = {
         "icon": "🐙",
         "desc": "全球最大代码托管平台动态"
     },
+    "producthunt": {
+        "name": "Product Hunt",
+        "url": "https://www.producthunt.com/feed",
+        "icon": "🚀",
+        "desc": "新产品与工具发布"
+    },
+    "infoq_feed": {
+        "name": "InfoQ（聚合 feed）",
+        "url": "https://feed.infoq.com/",
+        "icon": "📚",
+        "desc": "InfoQ 英文站聚合 RSS"
+    },
+    "thenewstack": {
+        "name": "The New Stack",
+        "url": "https://thenewstack.io/feed/",
+        "icon": "☁️",
+        "desc": "云原生与基础设施"
+    },
+    "oschina": {
+        "name": "OSCHINA",
+        "url": "https://www.oschina.net/news/rss",
+        "icon": "🐼",
+        "desc": "中文开源技术资讯"
+    },
     "docker": {
         "name": "Docker Blog",
         "url": "https://blog.docker.com/feed/",
@@ -184,10 +216,22 @@ DEV_SOURCES = {
         "desc": "开发者社区博客"
     },
     "hackernews": {
-        "name": "Hacker News",
+        "name": "Hacker News（首页）",
         "url": "https://hnrss.org/frontpage",
         "icon": "👾",
-        "desc": "YC旗下程序员社区"
+        "desc": "HN 热门（hnrss frontpage）"
+    },
+    "hn_show": {
+        "name": "Hacker News（Show）",
+        "url": "https://hnrss.org/show",
+        "icon": "🎬",
+        "desc": "HN Show 分区"
+    },
+    "kr36": {
+        "name": "36氪",
+        "url": "https://36kr.com/feed",
+        "icon": "⚡",
+        "desc": "科技与创业热点"
     },
     "lobsters": {
         "name": "Lobsters",
@@ -208,6 +252,10 @@ DEV_LANG_ORDER = [
 ]
 DEV_OSS_ORDER = [
     "github",
+    "producthunt",
+    "infoq_feed",
+    "thenewstack",
+    "oschina",
     "docker",
     "kubernetes",
     "spring",
@@ -220,7 +268,7 @@ DEV_OSS_ORDER = [
     "vscode",
     "postgresql",
 ]
-DEV_COMM_ORDER = ["devto", "hackernews", "lobsters"]
+DEV_COMM_ORDER = ["devto", "hackernews", "hn_show", "kr36", "lobsters"]
 
 
 def dev_fetch_order(category: str) -> list:
@@ -244,8 +292,10 @@ def dev_fetch_order(category: str) -> list:
     return out
 
 
-def fetch_source(source_id, config, days_ago=7):
+def fetch_source(source_id, config, days_ago=None):
     """Fetch news from a single source."""
+    if days_ago is None:
+        days_ago = DEFAULT_NEWS_LOOKBACK_DAYS
     try:
         req = urllib.request.Request(config["url"], headers={
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
@@ -263,10 +313,15 @@ def fetch_source(source_id, config, days_ago=7):
             if not title:
                 continue
             
-            link = (item.findtext('link') or '').strip()
-            if not link:
-                link = (item.findtext('guid') or '').strip()
-            
+            desc_raw = (
+                item.findtext('summary') or
+                item.findtext('content') or
+                item.findtext('description') or
+                item.findtext('content:encoded') or
+                ''
+            ).strip()
+            link = extract_item_link(item, desc_raw)
+
             pub_date_str = (
                 item.findtext('published') or 
                 item.findtext('updated') or 
@@ -275,16 +330,10 @@ def fetch_source(source_id, config, days_ago=7):
                 ''
             ).strip()
             
-            description = (
-                item.findtext('summary') or 
-                item.findtext('content') or 
-                item.findtext('description') or
-                item.findtext('content:encoded') or 
-                ''
-            ).strip()
+            description = desc_raw
             description = html.unescape(description) if description else ''
             description = re.sub(r'<[^>]+>', '', description)
-            description = description[:400] + '...' if len(description) > 400 else description
+            description = description[:1200] + '...' if len(description) > 1200 else description
             
             # Parse date
             pub_date = None
@@ -354,10 +403,20 @@ def format_output_lang(source_results):
         output.append(f"\n{icon} **{name}** — {org}")
         output.append(f"   📝 {desc}")
         
-        for i, item in enumerate(result["results"][:3], 1):
-            date_str = item['date'].strftime('%m-%d') if item['date'] else ''
-            title = item['title'][:55] + '…' if len(item['title']) > 55 else item['title']
-            output.append(f"   {i}. {title} {date_str}")
+        for idx, item in enumerate(result["results"][:3], 1):
+            output.append("")
+            output.append(RULE)
+            output.extend(
+                format_news_item_lines(
+                    idx,
+                    item.get("title") or "",
+                    item.get("description") or "",
+                    item["date"] if isinstance(item.get("date"), datetime) else None,
+                    item.get("link") or "",
+                    desc_max=480,
+                    im_clickable=True,
+                )
+            )
     
     return '\n'.join(output)
 
@@ -384,10 +443,20 @@ def format_output_oss(source_results):
         
         output.append(f"\n{icon} **{name}** — {desc}")
         
-        for i, item in enumerate(result["results"][:3], 1):
-            date_str = item['date'].strftime('%m-%d') if item['date'] else ''
-            title = item['title'][:55] + '…' if len(item['title']) > 55 else item['title']
-            output.append(f"   {i}. {title} {date_str}")
+        for idx, item in enumerate(result["results"][:3], 1):
+            output.append("")
+            output.append(RULE)
+            output.extend(
+                format_news_item_lines(
+                    idx,
+                    item.get("title") or "",
+                    item.get("description") or "",
+                    item["date"] if isinstance(item.get("date"), datetime) else None,
+                    item.get("link") or "",
+                    desc_max=480,
+                    im_clickable=True,
+                )
+            )
     
     return '\n'.join(output)
 
@@ -414,15 +483,27 @@ def format_output_dev(source_results):
         
         output.append(f"\n{icon} **{name}** — {desc}")
         
-        for i, item in enumerate(result["results"][:5], 1):
-            date_str = item['date'].strftime('%m-%d') if item['date'] else ''
-            title = item['title'][:60] + '…' if len(item['title']) > 60 else item['title']
-            output.append(f"   {i}. {title} {date_str}")
+        for idx, item in enumerate(result["results"][:5], 1):
+            output.append("")
+            output.append(RULE)
+            output.extend(
+                format_news_item_lines(
+                    idx,
+                    item.get("title") or "",
+                    item.get("description") or "",
+                    item["date"] if isinstance(item.get("date"), datetime) else None,
+                    item.get("link") or "",
+                    desc_max=480,
+                    im_clickable=True,
+                )
+            )
     
     return '\n'.join(output)
 
-def format_output_all(source_results, days=7):
+def format_output_all(source_results, days=None):
     """Format complete output."""
+    if days is None:
+        days = DEFAULT_NEWS_LOOKBACK_DAYS
     total = sum(r["count"] for r in source_results.values() if "count" in r)
     
     header = f"# 💻 编程语言 & 开源动态（近{days}天）\n"
@@ -436,7 +517,7 @@ def format_output_all(source_results, days=7):
     return '\n'.join(parts)
 
 if __name__ == "__main__":
-    days = 7
+    days = DEFAULT_NEWS_LOOKBACK_DAYS
     category = "all"
     argv, cli_cap = parse_argv_max_sources(sys.argv[1:])
     max_cap = resolve_max_sources(cli_cap)
@@ -469,4 +550,19 @@ if __name__ == "__main__":
     out = format_output_all(results, days)
     if max_cap is not None:
         out = f"（本 run 抓取 {len(fetch_ids)} 个源，上限 {max_cap}）\n\n" + out
+
+    appendix_on = (os.environ.get("OPENCLAW_TECH_RSS_URL_APPENDIX") or "1").strip().lower() not in (
+        "0",
+        "false",
+        "no",
+        "off",
+    )
+    if appendix_on and sum(r.get("count", 0) for r in results.values() if isinstance(r, dict)) > 0:
+        max_u = 300
+        raw_max = (os.environ.get("OPENCLAW_TECH_RSS_URL_APPENDIX_MAX") or "").strip()
+        if raw_max.isdigit():
+            max_u = max(1, min(2000, int(raw_max)))
+        urls = collect_urls_from_results(results, fetch_ids, max_urls=max_u)
+        out += format_url_appendix_block(urls)
+
     print(out)
