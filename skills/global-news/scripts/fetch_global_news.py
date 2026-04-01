@@ -3,6 +3,7 @@
 Unified global news fetcher (self-contained).
 Usage: python3 fetch_global_news.py [days_ago] [category] [--max-sources N]
        默认 days_ago=3（约过去 72 小时内，滚动窗口）。
+推荐入口: bash fetch_global_news.sh — 优先本脚本，失败则自动执行 fetch_global_news.bash.sh。
 """
 
 from __future__ import annotations

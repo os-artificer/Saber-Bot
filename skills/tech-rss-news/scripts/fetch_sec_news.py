@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """
 Fetch cybersecurity news: network penetration, vulnerabilities, attack techniques, and social engineering.
+推荐入口: bash fetch_sec_news.sh — 优先本脚本，失败则自动 fetch_sec_news.bash.sh。
 Usage: python3 fetch_sec_news.py [days_ago] [category]
     days_ago: number of days to look back (default: 3 ≈ past 72 hours rolling)
     category: all, vulns, attacks, se (social engineering), tools (default: all)

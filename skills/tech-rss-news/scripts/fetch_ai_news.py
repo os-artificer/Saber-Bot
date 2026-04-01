@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """
 Fetch AI/Tech news from multiple authoritative IT news sources.
+推荐入口: bash fetch_ai_news.sh — 优先本脚本，失败则自动 fetch_ai_news.bash.sh。
 Usage: python3 fetch_ai_news.py [days_ago] [site_filter]
     days_ago: number of days to look back (default: 3 ≈ past 72 hours rolling)
     site_filter: comma-separated list of site codes (e.g., "en,cn,verge")
