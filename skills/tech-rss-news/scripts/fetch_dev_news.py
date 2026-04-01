@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Fetch programming language news, version logs, and open source product info.
-推荐入口: bash fetch_dev_news.sh — 优先本脚本，失败则自动 fetch_dev_news.bash.sh。
+入口: python3 fetch_dev_news.py（跨平台，不依赖 Bash）。
 Usage: python3 fetch_dev_news.py [days_ago] [category]
     days_ago: number of days to look back (default: 3 ≈ past 72 hours rolling)
     category: all, languages, oss, devtools (default: all)
@@ -33,243 +33,7 @@ from news_format import (
     format_news_item_lines,
     format_url_appendix_block,
 )
-
-# Programming Language Sources
-LANG_SOURCES = {
-    "python": {
-        "name": "Python",
-        "url": "https://blog.python.org/feeds/posts/default",
-        "icon": "🐍",
-        "org": "Python Software Foundation",
-        "desc": "通用编程语言，数据科学/AI首选"
-    },
-    "rust": {
-        "name": "Rust",
-        "url": "https://blog.rust-lang.org/feed.xml",
-        "icon": "🦀",
-        "org": "Rust Foundation",
-        "desc": "系统编程语言，主打内存安全"
-    },
-    "typescript": {
-        "name": "TypeScript",
-        "url": "https://devblogs.microsoft.com/typescript/feed/",
-        "icon": "📘",
-        "org": "Microsoft",
-        "desc": "JavaScript超集，静态类型"
-    },
-    "nodejs": {
-        "name": "Node.js",
-        "url": "https://nodejs.org/en/feed/blog.xml",
-        "icon": "🟢",
-        "org": "OpenJS Foundation",
-        "desc": "JavaScript运行时"
-    },
-    "golang": {
-        "name": "Go",
-        "url": "https://go.dev/blog/index.xml",
-        "icon": "🔵",
-        "org": "Google",
-        "desc": "Google开发的编译型语言"
-    },
-    "java": {
-        "name": "Java",
-        "url": "https://www.oracle.com/java/technologies/javadoc-and-docs.html",
-        "icon": "☕",
-        "org": "Oracle / OpenJDK",
-        "desc": "企业级后端开发"
-    },
-    "ruby": {
-        "name": "Ruby",
-        "url": "https://ruby.social/@RubyWeekly/feed",
-        "icon": "💎",
-        "org": "Ruby Association",
-        "desc": "简洁web开发语言"
-    },
-    "swift": {
-        "name": "Swift",
-        "url": "https://swift.org/blog/swift-5.9-released/",
-        "icon": "🍎",
-        "org": "Apple",
-        "desc": "iOS/macOS开发语言"
-    },
-    "kotlin": {
-        "name": "Kotlin",
-        "url": "https://blog.jetbrains.com/kotlin/feed/",
-        "icon": "🟣",
-        "org": "JetBrains / Google",
-        "desc": "JVM语言，Android首选"
-    },
-    "csharp": {
-        "name": "C#",
-        "url": "https://devblogs.microsoft.com/dotnet/feed/",
-        "icon": "💜",
-        "org": "Microsoft",
-        "desc": ".NET平台主语言"
-    }
-}
-
-# Open Source & DevTools Sources
-OSS_SOURCES = {
-    "github": {
-        "name": "GitHub Blog",
-        "url": "https://github.com/blog.atom",
-        "icon": "🐙",
-        "desc": "全球最大代码托管平台动态"
-    },
-    "producthunt": {
-        "name": "Product Hunt",
-        "url": "https://www.producthunt.com/feed",
-        "icon": "🚀",
-        "desc": "新产品与工具发布"
-    },
-    "infoq_feed": {
-        "name": "InfoQ（聚合 feed）",
-        "url": "https://feed.infoq.com/",
-        "icon": "📚",
-        "desc": "InfoQ 英文站聚合 RSS"
-    },
-    "thenewstack": {
-        "name": "The New Stack",
-        "url": "https://thenewstack.io/feed/",
-        "icon": "☁️",
-        "desc": "云原生与基础设施"
-    },
-    "oschina": {
-        "name": "OSCHINA",
-        "url": "https://www.oschina.net/news/rss",
-        "icon": "🐼",
-        "desc": "中文开源技术资讯"
-    },
-    "docker": {
-        "name": "Docker Blog",
-        "url": "https://blog.docker.com/feed/",
-        "icon": "🐳",
-        "desc": "容器化技术领导者"
-    },
-    "kubernetes": {
-        "name": "Kubernetes",
-        "url": "https://kubernetes.io/feed.xml",
-        "icon": "☸️",
-        "desc": "容器编排平台"
-    },
-    "spring": {
-        "name": "Spring",
-        "url": "https://spring.io/blog.atom",
-        "icon": "🌱",
-        "desc": "Java企业级框架"
-    },
-    "react": {
-        "name": "React",
-        "url": "https://react.dev/blog/rss.xml",
-        "icon": "⚛️",
-        "desc": "UI构建库"
-    },
-    "vue": {
-        "name": "Vue.js",
-        "url": "https://blog.vuejs.org/feed.xml",
-        "icon": "💚",
-        "desc": "渐进式前端框架"
-    },
-    "deno": {
-        "name": "Deno",
-        "url": "https://deno.com/blog/rss.xml",
-        "icon": "🦕",
-        "desc": "安全 JS/TS 运行时"
-    },
-    "svelte": {
-        "name": "Svelte",
-        "url": "https://svelte.dev/blog/rss.xml",
-        "icon": "🔥",
-        "desc": "编译型前端框架"
-    },
-    "angular": {
-        "name": "Angular",
-        "url": "https://blog.angular.io/feed.atom",
-        "icon": "📐",
-        "desc": "Google前端框架"
-    },
-    "linux": {
-        "name": "Linux",
-        "url": "https://lkml.org/lkml/recent.xml",
-        "icon": "🐧",
-        "desc": "开源内核"
-    },
-    "vscode": {
-        "name": "VS Code",
-        "url": "https://code.visualstudio.com/feed.xml",
-        "icon": "📎",
-        "desc": "微软轻量级编辑器"
-    },
-    "postgresql": {
-        "name": "PostgreSQL",
-        "url": "https://www.postgresql.org/blogs/rss/",
-        "icon": "🐘",
-        "desc": "开源关系型数据库"
-    }
-}
-
-# Dev Community Sources
-DEV_SOURCES = {
-    "devto": {
-        "name": "dev.to",
-        "url": "https://dev.to/feed",
-        "icon": "👨‍💻",
-        "desc": "开发者社区博客"
-    },
-    "hackernews": {
-        "name": "Hacker News（首页）",
-        "url": "https://hnrss.org/frontpage",
-        "icon": "👾",
-        "desc": "HN 热门（hnrss frontpage）"
-    },
-    "hn_show": {
-        "name": "Hacker News（Show）",
-        "url": "https://hnrss.org/show",
-        "icon": "🎬",
-        "desc": "HN Show 分区"
-    },
-    "kr36": {
-        "name": "36氪",
-        "url": "https://36kr.com/feed",
-        "icon": "⚡",
-        "desc": "科技与创业热点"
-    },
-    "lobsters": {
-        "name": "Lobsters",
-        "url": "https://lobste.rs/rss",
-        "icon": "🦞",
-        "desc": "技术社区"
-    }
-}
-
-# All sources combined
-ALL_SOURCES = {}
-ALL_SOURCES.update(LANG_SOURCES)
-ALL_SOURCES.update(OSS_SOURCES)
-ALL_SOURCES.update(DEV_SOURCES)
-
-DEV_LANG_ORDER = [
-    "python", "rust", "typescript", "nodejs", "golang", "java", "kotlin", "csharp", "swift", "ruby",
-]
-DEV_OSS_ORDER = [
-    "github",
-    "producthunt",
-    "infoq_feed",
-    "thenewstack",
-    "oschina",
-    "docker",
-    "kubernetes",
-    "spring",
-    "react",
-    "vue",
-    "angular",
-    "deno",
-    "svelte",
-    "linux",
-    "vscode",
-    "postgresql",
-]
-DEV_COMM_ORDER = ["devto", "hackernews", "hn_show", "kr36", "lobsters"]
+from tech_rss_dev_sources import ALL_SOURCES, DEV_COMM_ORDER, DEV_LANG_ORDER, DEV_OSS_ORDER, DEV_SOURCES, LANG_SOURCES, OSS_SOURCES
 
 
 def dev_fetch_order(category: str) -> list:
@@ -370,6 +134,7 @@ def fetch_source(source_id, config, days_ago=None):
             "icon": config["icon"], 
             "org": config.get("org", ""),
             "desc": config.get("desc", ""),
+            "region": config.get("region", "overseas"),
             "results": results, 
             "count": len(results)
         }
@@ -396,12 +161,13 @@ def format_output_lang(source_results):
         name = result["name"]
         org = result.get("org", "")
         desc = result.get("desc", "")
+        region = "境内" if result.get("region") == "china" else "境外"
         
         if "error" in result:
             output.append(f"\n{icon} **{name}** ({org}): ❌ {result['error']}")
             continue
         
-        output.append(f"\n{icon} **{name}** — {org}")
+        output.append(f"\n{icon} **{name}**（{region}）— {org}")
         output.append(f"   📝 {desc}")
         
         for idx, item in enumerate(result["results"][:3], 1):
@@ -437,12 +203,13 @@ def format_output_oss(source_results):
         icon = result["icon"]
         name = result["name"]
         desc = result.get("desc", "")
+        region = "境内" if result.get("region") == "china" else "境外"
         
         if "error" in result:
             output.append(f"\n{icon} **{name}**: ❌ {result['error']}")
             continue
         
-        output.append(f"\n{icon} **{name}** — {desc}")
+        output.append(f"\n{icon} **{name}**（{region}）— {desc}")
         
         for idx, item in enumerate(result["results"][:3], 1):
             output.append("")
@@ -477,12 +244,13 @@ def format_output_dev(source_results):
         icon = result["icon"]
         name = result["name"]
         desc = result.get("desc", "")
+        region = "境内" if result.get("region") == "china" else "境外"
         
         if "error" in result:
             output.append(f"\n{icon} **{name}**: ❌ {result['error']}")
             continue
         
-        output.append(f"\n{icon} **{name}** — {desc}")
+        output.append(f"\n{icon} **{name}**（{region}）— {desc}")
         
         for idx, item in enumerate(result["results"][:5], 1):
             output.append("")

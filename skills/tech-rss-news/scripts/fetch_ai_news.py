@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Fetch AI/Tech news from multiple authoritative IT news sources.
-推荐入口: bash fetch_ai_news.sh — 优先本脚本，失败则自动 fetch_ai_news.bash.sh。
+入口: python3 fetch_ai_news.py（跨平台，不依赖 Bash）。
 Usage: python3 fetch_ai_news.py [days_ago] [site_filter]
     days_ago: number of days to look back (default: 3 ≈ past 72 hours rolling)
     site_filter: comma-separated list of site codes (e.g., "en,cn,verge")
@@ -40,198 +40,7 @@ from news_fetch_filters import (
 )
 from news_format import collect_urls_from_results, format_source_block, format_url_appendix_block
 from rss_links import extract_item_link
-
-# Supported sources with RSS feeds
-SOURCES = {
-    "en": {
-        "name": "InfoQ English",
-        "url": "https://www.infoq.com/feed",
-        "lang": "en",
-        "icon": "🌐",
-        "ai_keywords": [
-            "ai", "machine learning", "generative ai", "llm", "gpt",
-            "neural", "deep learning", "artificial intelligence", 
-            "agents", "openai", "langchain", "rag", "embedding",
-            "llama", "gemini", "claude", "chatgpt", "stable diffusion",
-            "transformer", "token", "model", "ai/ml", "mlops"
-        ]
-    },
-    "cn": {
-        "name": "InfoQ 中文",
-        "url": "https://www.infoq.cn/feed",
-        "lang": "cn",
-        "icon": "🌏",
-        "ai_keywords": [
-            "人工智能", "机器学习", "生成式AI", "大语言模型", "LLM",
-            "神经网络", "深度学习", "AI", "Agent", "智能体",
-            "OpenAI", "ChatGPT", "GPT", "langchain", "RAG",
-            "Embedding", "Gemini", "Claude", "Llama", "扩散模型",
-            "Transformer", "MLOps", "AI Agent", "大模型"
-        ]
-    },
-    "verge": {
-        "name": "The Verge",
-        "url": "https://www.theverge.com/rss/index.xml",
-        "lang": "en",
-        "icon": "📰",
-        "ai_keywords": [
-            "ai", "artificial intelligence", "machine learning", "chatgpt",
-            "openai", "google deepmind", "anthropic", "llm", "gpt",
-            "neural", "robotics", "automation", "generative"
-        ]
-    },
-    "ars": {
-        "name": "Ars Technica",
-        "url": "https://feeds.arstechnica.com/arstechnica/index",
-        "lang": "en",
-        "icon": "🔧",
-        "ai_keywords": [
-            "ai", "artificial intelligence", "machine learning", "chatgpt",
-            "openai", "llm", "gpt", "neural network", "deep learning",
-            "google deepmind", "anthropic", "stable diffusion"
-        ]
-    },
-    "tc": {
-        "name": "TechCrunch",
-        "url": "https://techcrunch.com/feed/",
-        "lang": "en",
-        "icon": "💰",
-        "ai_keywords": [
-            "ai", "artificial intelligence", "machine learning", "chatgpt",
-            "openai", "llm", "generative ai", "startup", "funding",
-            "anthropic", "foundation model", "ai startup"
-        ]
-    },
-    "wired": {
-        "name": "Wired",
-        "url": "https://www.wired.com/feed/rss",
-        "lang": "en",
-        "icon": "🔌",
-        "ai_keywords": [
-            "ai", "artificial intelligence", "machine learning", "chatgpt",
-            "openai", "llm", "generative ai", "neural", "deepmind"
-        ]
-    },
-    "hn": {
-        "name": "Hacker News",
-        "url": "https://news.ycombinator.com/rss",
-        "lang": "en",
-        "icon": "👨‍💻",
-        "ai_keywords": [
-            "ai", "machine learning", "llm", "gpt", "openai", "chatgpt",
-            "language model", "neural", "deep learning", "transformer",
-            "anthropic", "claude", "gemini", "mistral", "rAG"
-        ]
-    },
-    "tns": {
-        "name": "The New Stack",
-        "url": "https://thenewstack.io/feed/",
-        "lang": "en",
-        "icon": "☁️",
-        "ai_keywords": [
-            "ai", "machine learning", "llm", "kubernetes", "cloud native",
-            "devops", "openai", "generative ai", "mlops", "agent"
-        ]
-    },
-    "vb": {
-        "name": "VentureBeat",
-        "url": "https://feeds.feedburner.com/venturebeat/SZYF",
-        "lang": "en",
-        "icon": "📊",
-        "ai_keywords": [
-            "ai", "artificial intelligence", "machine learning", "chatgpt",
-            "openai", "llm", "generative ai", "enterprise ai", "ai model"
-        ]
-    },
-    "devto": {
-        "name": "dev.to",
-        "url": "https://dev.to/feed",
-        "lang": "en",
-        "icon": "🧑‍💻",
-        "ai_keywords": [
-            "ai", "machine learning", "llm", "gpt", "openai", "chatgpt",
-            "python", "langchain", "rag", "embedding", "neural network",
-            "tensorflow", "pytorch", "generative ai", "llama"
-        ]
-    },
-    "mit_tr": {
-        "name": "MIT Technology Review",
-        "url": "https://www.technologyreview.com/feed/",
-        "lang": "en",
-        "icon": "🔬",
-        "ai_keywords": [
-            "ai", "machine learning", "llm", "gpt", "openai", "neural",
-            "artificial intelligence", "generative", "model", "deep learning",
-            "algorithm", "robot", "computer vision", "nlp", "chip", "quantum"
-        ]
-    },
-    "theregister": {
-        "name": "The Register",
-        "url": "https://www.theregister.com/headlines.atom",
-        "lang": "en",
-        "icon": "🗞️",
-        "ai_keywords": [
-            "ai", "machine learning", "llm", "gpt", "openai", "chatgpt",
-            "nvidia", "amd", "intel", "cloud", "kubernetes", "python",
-            "linux", "security", "cyber", "data", "neural", "software"
-        ]
-    },
-    "nvidia_blog": {
-        "name": "NVIDIA Blog",
-        "url": "https://blogs.nvidia.com/feed/",
-        "lang": "en",
-        "icon": "🟢",
-        "ai_keywords": [
-            "ai", "machine learning", "gpu", "llm", "cuda", "neural",
-            "deep learning", "generative", "model", "inference", "training"
-        ]
-    },
-    "ai_news": {
-        "name": "AI News",
-        "url": "https://www.artificialintelligence-news.com/feed/",
-        "lang": "en",
-        "icon": "🤖",
-        "ai_keywords": [
-            "ai", "machine learning", "llm", "gpt", "artificial intelligence",
-            "generative", "neural", "deep learning", "nlp", "automation"
-        ]
-    },
-    "huggingface": {
-        "name": "Hugging Face Blog",
-        "url": "https://huggingface.co/blog/feed.xml",
-        "lang": "en",
-        "icon": "🤗",
-        "accept_all": True,
-        "ai_keywords": [],
-    },
-    "qbitai": {
-        "name": "量子位",
-        "url": "https://www.qbitai.com/feed",
-        "lang": "cn",
-        "icon": "⚛️",
-        "accept_all": True,
-        "ai_keywords": [],
-    },
-}
-
-AI_NEWS_SOURCE_ORDER = [
-    "en",
-    "cn",
-    "qbitai",
-    "huggingface",
-    "mit_tr",
-    "theregister",
-    "nvidia_blog",
-    "ai_news",
-    "verge",
-    "ars",
-    "tc",
-    "wired",
-    "hn",
-    "tns",
-    "vb",
-    "devto",
-]
+from tech_rss_ai_sources import AI_NEWS_SOURCE_ORDER, AI_REGION_ORDER, SOURCES
 
 def is_ai_related(title, description, keywords):
     """Check if content is AI-related based on keywords."""
@@ -322,39 +131,43 @@ def format_output(source_results, filter_sites=None):
     """Format all results into readable output."""
     output = []
     total = 0
-    
-    order = AI_NEWS_SOURCE_ORDER
-    
-    for source_id in order:
-        if filter_sites and source_id not in filter_sites:
-            continue
-            
-        result = source_results.get(source_id)
-        if not result or result["count"] == 0:
-            continue
-            
-        icon = result["icon"]
-        name = result["name"]
-        items = result["results"]
-        
-        if "error" in result:
-            output.append(f"{icon} **{name}** · ❌ {result['error']}")
-            output.append("")
-            continue
-        
-        total += len(items)
-        output.extend(
-            format_source_block(
-                icon,
-                f"{name}（{len(items)} 条）",
-                items,
-                max_items=10,
-                desc_max=480,
-                im_clickable=True,
+
+    region_title = {
+        "china": "## 🇨🇳 中国境内源",
+        "overseas": "## 🌍 境外源",
+    }
+    for region in ("china", "overseas"):
+        region_lines = []
+        for source_id in AI_REGION_ORDER.get(region, []):
+            if filter_sites and source_id not in filter_sites:
+                continue
+            result = source_results.get(source_id)
+            if not result or result["count"] == 0:
+                continue
+            icon = result["icon"]
+            name = result["name"]
+            items = result["results"]
+            if "error" in result:
+                region_lines.append(f"{icon} **{name}** · ❌ {result['error']}")
+                region_lines.append("")
+                continue
+            total += len(items)
+            region_lines.extend(
+                format_source_block(
+                    icon,
+                    f"{name}（{len(items)} 条）",
+                    items,
+                    max_items=10,
+                    desc_max=480,
+                    im_clickable=True,
+                )
             )
-        )
-        output.append("")
-    
+            region_lines.append("")
+        if region_lines:
+            output.append(region_title[region])
+            output.append("")
+            output.extend(region_lines)
+
     if total == 0:
         return "今日无AI相关新资讯。"
     

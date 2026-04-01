@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Fetch cybersecurity news: network penetration, vulnerabilities, attack techniques, and social engineering.
-推荐入口: bash fetch_sec_news.sh — 优先本脚本，失败则自动 fetch_sec_news.bash.sh。
+入口: python3 fetch_sec_news.py（跨平台，不依赖 Bash）。
 Usage: python3 fetch_sec_news.py [days_ago] [category]
     days_ago: number of days to look back (default: 3 ≈ past 72 hours rolling)
     category: all, vulns, attacks, se (social engineering), tools (default: all)
@@ -29,233 +29,7 @@ from news_fetch_filters import (
 )
 from news_format import collect_urls_from_results, format_source_block, format_url_appendix_block
 from rss_links import extract_item_link
-
-# === Security News Sources ===
-SECURITY_NEWS = {
-    "thn": {
-        "name": "The Hacker News",
-        "url": "https://thehackernews.com/feeds/posts/default?security",
-        "icon": "🎯",
-        "desc": "全球最权威网络安全媒体之一"
-    },
-    "bleeping": {
-        "name": "BleepingComputer",
-        "url": "https://www.bleepingcomputer.com/feed/",
-        "icon": "💻",
-        "desc": "知名网络安全新闻站"
-    },
-    "securityweek": {
-        "name": "SecurityWeek",
-        "url": "https://www.securityweek.com/feed/",
-        "icon": "📰",
-        "desc": "企业安全新闻"
-    },
-    "krebson": {
-        "name": "Krebs on Security",
-        "url": "https://krebsonsecurity.com/feed/",
-        "icon": "🔍",
-        "desc": "Brian Krebs独立网络安全调查"
-    },
-    "darkreading": {
-        "name": "Dark Reading",
-        "url": "https://www.darkreading.com/rss.xml",
-        "icon": "🌑",
-        "desc": "企业安全分析与战略"
-    },
-    "threatpost": {
-        "name": "Threatpost",
-        "url": "https://threatpost.com/feed/",
-        "icon": "⚠️",
-        "desc": "独立网络安全新闻"
-    },
-    "nakedsecurity": {
-        "name": "Naked Security",
-        "url": "https://nakedsecurity.sophos.com/feed/",
-        "icon": "🕵️",
-        "desc": "Sophos安全研究"
-    },
-    "helpnet": {
-        "name": "Help Net Security",
-        "url": "https://www.helpnetsecurity.com/feed/",
-        "icon": "🔐",
-        "desc": "网络安全新闻与研究"
-    },
-    "schneier": {
-        "name": "Schneier on Security",
-        "url": "https://www.schneier.com/feed/atom/",
-        "icon": "🛡️",
-        "desc": "Bruce Schneier安全专家博客"
-    },
-    "isc_sans": {
-        "name": "SANS ISC Diary",
-        "url": "https://isc.sans.edu/rssfeed_full.xml",
-        "icon": "📡",
-        "desc": "SANS互联网风暴中心日记（全文 RSS）"
-    },
-    "securelist": {
-        "name": "Kaspersky Securelist",
-        "url": "https://securelist.com/feed/",
-        "icon": "🕸️",
-        "desc": "卡巴斯基威胁研究"
-    },
-    "welivesecurity": {
-        "name": "ESET WeLiveSecurity",
-        "url": "https://www.welivesecurity.com/feed/",
-        "icon": "🦠",
-        "desc": "ESET 安全研究与资讯"
-    },
-    "rapid7": {
-        "name": "Rapid7 Blog",
-        "url": "https://blog.rapid7.com/rss/",
-        "icon": "⚡",
-        "desc": "漏洞与检测研究"
-    },
-    "recordedfuture": {
-        "name": "Recorded Future",
-        "url": "https://www.recordedfuture.com/feed/",
-        "icon": "🔮",
-        "desc": "威胁情报与网络风险"
-    },
-    "anquanke": {
-        "name": "安全客",
-        "url": "https://www.anquanke.com/rss",
-        "icon": "🔰",
-        "desc": "国内安全资讯与漏洞动态"
-    },
-    "freebuf": {
-        "name": "FreeBuf",
-        "url": "https://www.freebuf.com/feed",
-        "icon": "🧱",
-        "desc": "网络安全行业门户"
-    },
-    "nsfocus": {
-        "name": "绿盟科技博客",
-        "url": "https://blog.nsfocus.net/feed/",
-        "icon": "🟢",
-        "desc": "绿盟威胁研究与安全公告"
-    },
-}
-
-# === Vulnerability / CVE Sources ===
-VULN_SOURCES = {
-    "tenable": {
-        "name": "Tenable Blog",
-        "url": "https://www.tenable.com/blog/feed",
-        "icon": "🕵️",
-        "desc": "漏洞研究与分析"
-    },
-    "qualys": {
-        "name": "Qualys Blog",
-        "url": "https://blog.qualys.com/feed",
-        "icon": "🏆",
-        "desc": "Qualys漏洞研究"
-    },
-    "exploitdb": {
-        "name": "Exploit-DB",
-        "url": "https://www.exploit-db.com/rss.xml",
-        "icon": "💉",
-        "desc": "漏洞利用代码数据库"
-    },
-    "unit42": {
-        "name": "Palo Alto Unit 42",
-        "url": "https://unit42.paloaltonetworks.com/feed/",
-        "icon": "🦅",
-        "desc": "高级威胁研究"
-    },
-    "nvd": {
-        "name": "NVD CVE（recent JSON）",
-        "url": "",
-        "kind": "json_nvd",
-        "icon": "🛡️",
-        "desc": "NIST NVD 近期 CVE 官方 JSON 源（gzip）"
-    },
-    "cisa_kev": {
-        "name": "CISA KEV",
-        "url": "",
-        "kind": "json_cisa_kev",
-        "icon": "🇺🇸",
-        "desc": "CISA 已知被利用漏洞目录（JSON）"
-    },
-}
-
-# === Social Engineering Sources ===
-SE_SOURCES = {
-    "socialengineer": {
-        "name": "Social-Engineer.org",
-        "url": "https://www.social-engineer.org/feed/",
-        "icon": "🎭",
-        "desc": "社会工程学权威资源"
-    },
-    "trustsec": {
-        "name": "TrustedSec",
-        "url": "https://www.trustedsec.com/feed/",
-        "icon": "✅",
-        "desc": "渗透测试与社会工程"
-    },
-    "offsec": {
-        "name": "Offensive Security",
-        "url": "https://www.offensive-security.com/feed/",
-        "icon": "⚔️",
-        "desc": "渗透测试培训与研究"
-    }
-}
-
-# === Security Tools / Pentest ===
-TOOLS_SOURCES = {
-    "crowdstrike": {
-        "name": "CrowdStrike",
-        "url": "https://www.crowdstrike.com/blog/feed/",
-        "icon": "🦅",
-        "desc": "端点安全与威胁情报"
-    },
-    "sentinelone": {
-        "name": "SentinelOne",
-        "url": "https://www.sentinelone.com/feed/",
-        "icon": "1️⃣",
-        "desc": "AI端点保护"
-    },
-    "mandiant": {
-        "name": "Mandiant",
-        "url": "https://www.mandiant.com/feed",
-        "icon": "🔥",
-        "desc": "APT威胁研究"
-    },
-    "csoonline": {
-        "name": "CSO Online",
-        "url": "https://www.csoonline.com/rss/security/",
-        "icon": "🏢",
-        "desc": "企业安全战略"
-    }
-}
-
-# All sources
-ALL_SOURCES = {}
-ALL_SOURCES.update(SECURITY_NEWS)
-ALL_SOURCES.update(VULN_SOURCES)
-ALL_SOURCES.update(SE_SOURCES)
-ALL_SOURCES.update(TOOLS_SOURCES)
-
-# 抓取顺序（与输出分组一致，用于 --max-sources / OPENCLAW_NEWS_MAX_SOURCES）
-SEC_FETCH_ORDER = {
-    "all": [
-        "thn", "bleeping", "securityweek", "krebson", "darkreading", "threatpost",
-        "nakedsecurity", "helpnet", "schneier", "isc_sans", "securelist", "welivesecurity",
-        "rapid7", "recordedfuture", "anquanke", "freebuf", "nsfocus",
-        "nvd", "cisa_kev", "tenable", "qualys", "exploitdb", "unit42",
-        "socialengineer", "trustsec", "offsec", "crowdstrike", "sentinelone", "mandiant", "csoonline",
-    ],
-    "vulns": [
-        "nvd", "cisa_kev", "anquanke", "freebuf", "nsfocus",
-        "tenable", "qualys", "exploitdb", "unit42",
-    ],
-    "attacks": [
-        "thn", "bleeping", "securityweek", "krebson", "darkreading", "threatpost",
-        "nakedsecurity", "helpnet", "schneier", "isc_sans", "securelist", "welivesecurity",
-        "rapid7", "recordedfuture", "anquanke", "freebuf", "nsfocus",
-    ],
-    "se": ["socialengineer", "trustsec", "offsec"],
-    "tools": ["crowdstrike", "sentinelone", "mandiant", "csoonline"],
-}
+from tech_rss_sec_sources import ALL_SOURCES, SEC_FETCH_ORDER, SECURITY_NEWS, SE_SOURCES, TOOLS_SOURCES, VULN_SOURCES
 
 
 def _parse_iso_datetime(s: str):
@@ -500,79 +274,32 @@ def format_output_all(source_results, days=None, category="all"):
         days = DEFAULT_NEWS_LOOKBACK_DAYS
     total = sum(r["count"] for r in source_results.values() if "count" in r)
     today = datetime.now().strftime('%m-%d')
-    
-    # Build source order by category
-    if category == "all":
-        source_order = [
-            ("thn", "🎯"), ("bleeping", "💻"), ("securityweek", "📰"),
-            ("krebson", "🔍"), ("darkreading", "🌑"), ("threatpost", "⚠️"),
-            ("nakedsecurity", "🕵️"), ("helpnet", "🔐"), ("schneier", "🛡️"),
-            ("isc_sans", "📡"), ("securelist", "🕸️"), ("welivesecurity", "🦠"),
-            ("rapid7", "⚡"), ("recordedfuture", "🔮"),
-            ("anquanke", "🔰"), ("freebuf", "🧱"), ("nsfocus", "🟢"),
-            ("nvd", "🛡️"), ("cisa_kev", "🇺🇸"),
-            ("tenable", "🕵️"), ("qualys", "🏆"), ("exploitdb", "💉"), ("unit42", "🦅"),
-            ("socialengineer", "🎭"), ("trustsec", "✅"), ("offsec", "⚔️"),
-            ("crowdstrike", "🦅"), ("sentinelone", "1️⃣"), ("mandiant", "🔥"), ("csoonline", "🏢"),
-        ]
-    elif category == "vulns":
-        source_order = [
-            ("nvd", "🛡️"), ("cisa_kev", "🇺🇸"),
-            ("anquanke", "🔰"), ("freebuf", "🧱"), ("nsfocus", "🟢"),
-            ("tenable", "🕵️"), ("qualys", "🏆"), ("exploitdb", "💉"), ("unit42", "🦅"),
-        ]
-    elif category == "attacks":
-        source_order = [
-            ("thn", "🎯"), ("bleeping", "💻"), ("securityweek", "📰"), ("krebson", "🔍"),
-            ("darkreading", "🌑"), ("threatpost", "⚠️"), ("nakedsecurity", "🕵️"),
-            ("helpnet", "🔐"), ("schneier", "🛡️"),
-            ("isc_sans", "📡"), ("securelist", "🕸️"), ("welivesecurity", "🦠"),
-            ("rapid7", "⚡"), ("recordedfuture", "🔮"),
-            ("anquanke", "🔰"), ("freebuf", "🧱"), ("nsfocus", "🟢"),
-        ]
-    elif category == "se":
-        source_order = [("socialengineer", "🎭"), ("trustsec", "✅"), ("offsec", "⚔️")]
-    elif category == "tools":
-        source_order = [("crowdstrike", "🦅"), ("sentinelone", "1️⃣"), ("mandiant", "🔥"), ("csoonline", "🏢")]
-    else:
-        source_order = [(k, v["icon"]) for k, v in source_results.items()]
-    
+
+    order_ids = SEC_FETCH_ORDER.get(category, SEC_FETCH_ORDER["all"])
     output = []
     output.append(f"🔒 安全资讯 {today} | 共 {total} 条")
     output.append("")
-    
-    prev_group = None
-    for source_id, icon in source_order:
-        if source_id not in source_results:
-            continue
-        result = source_results[source_id]
-        if not result or result["count"] == 0:
-            continue
-        
-        lines = format_section(icon, source_id, result, max_items=6)
-        if not lines:
-            continue
-        
-        # Add blank line between groups
-        group = 0
-        if source_id in [
-            "thn", "bleeping", "securityweek", "krebson", "darkreading", "threatpost",
-            "nakedsecurity", "helpnet", "schneier", "isc_sans", "securelist",
-            "welivesecurity", "rapid7", "recordedfuture", "anquanke", "freebuf", "nsfocus",
-        ]:
-            group = 1
-        elif source_id in ["nvd", "cisa_kev", "tenable", "qualys", "exploitdb", "unit42"]:
-            group = 2
-        elif source_id in ["socialengineer", "trustsec", "offsec"]:
-            group = 3
-        else:
-            group = 4
-        
-        if prev_group and group != prev_group:
+
+    for region, title in (("china", "## 🇨🇳 中国境内源"), ("overseas", "## 🌍 境外源")):
+        region_lines = []
+        for source_id in order_ids:
+            if source_id not in source_results:
+                continue
+            src_cfg = ALL_SOURCES.get(source_id, {})
+            if src_cfg.get("region", "overseas") != region:
+                continue
+            result = source_results[source_id]
+            if not result or result["count"] == 0:
+                continue
+            icon = result.get("icon", src_cfg.get("icon", "•"))
+            lines = format_section(icon, source_id, result, max_items=6)
+            if lines:
+                region_lines.extend(lines)
+                region_lines.append("")
+        if region_lines:
+            output.append(title)
             output.append("")
-        prev_group = group
-        
-        output.extend(lines)
+            output.extend(region_lines)
     
     return '\n'.join(output)
 

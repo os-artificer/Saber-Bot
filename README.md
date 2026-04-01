@@ -20,7 +20,8 @@ cd /path/to/Saber-Bot
 默认行为：
 
 1. 将本仓库 `skills/` **复制**到 `~/.openclaw/skills/`（与现有文件合并，不删除你在该目录下的其它 skill）。
-2. 若存在 `~/.openclaw/openclaw.json`，则为下列 skill 写入 `skills.entries.<name>.enabled: true`（并备份为 `openclaw.json.bak`）：
+2. **不要**手动删除 `~/.openclaw/skills/` 或 `~/.agents/skills/` 下非本仓库提供的 skill（例如 OpenClaw / 自建符号链接）；仅同步 Saber-Bot 时只应覆盖本仓库列出的目录，其它条目保持不动。
+3. 若存在 `~/.openclaw/openclaw.json`，则为下列 skill 写入 `skills.entries.<name>.enabled: true`（并备份为 `openclaw.json.bak`）：
    - `global-news`, `tech-rss-news`, `weather`
 
 ### 选项
